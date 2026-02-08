@@ -3,71 +3,60 @@ concurrency:
   group: ci-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
-      - develop
-      - event/*
-      - feature/*
-    paths-ignore:
-      - "**.md"
-      - version.properties
-  pull_request_target:
-    branches:
-      - master
-      - develop
-      - event/*
-      - feature/*
-    paths-ignore:
-      - "**.md"
-  workflow_dispatch:
+      - main
 
 jobs:
-  build-custom-firmware:
-    runs-on: ubuntu-24.04
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout mtcn (your variants)
-        uses: actions/checkout@v6
+      - name: Checkout current repo (mtcn)
+        uses: actions/checkout@v4
         with:
           path: mtcn
 
-      - name: Checkout official meshtastic/firmware
-        uses: actions/checkout@v6
+      - name: Checkout meshtastic/firmware
+        uses: actions/checkout@v4
         with:
           repository: meshtastic/firmware
           path: firmware
-          submodules: recursive
+          submodules: true
+          fetch-depth: 1
 
-      - name: Replace variants folder
+      - name: List dir to confirm
+        run: ls -la && ls -la firmware
+
+      - name: Replace variants
         run: |
           rm -rf firmware/variants
           cp -r mtcn/variants firmware/
 
-      - uses: actions/setup-python@v6
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      # 关键：全部用 cd 进入目录，绝对不迷路
       - name: Install dependencies
         run: |
           cd firmware
-          python -m pip install --upgrade pip
-          pip install -U platformio
-          pip install -r requirements.txt
+          python -m pip install -U pip
+          python -m pip install -U platformio
+          python -m pip install -r requirements.txt
 
-      - name: Build all firmware
+      - name: Build
         run: |
           cd firmware
           python build.py --matrix
 
-      - name: Upload built firmware
-        uses: actions/upload-artifact@v6
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: compiled-firmware
+          name: firmware
           path: |
             firmware/release/*.bin
             firmware/release/*.uf2
             firmware/release/*.hex
             firmware/release/*.zip
-            firmware/release/*.mt.json
-          retention-days: 30
