@@ -1,0 +1,59 @@
+name: Build Single (Manual Input)
+on:
+  workflow_dispatch:
+    inputs:
+      board:
+        description: '输入要编译的 env 名称（如 tbeam、esp32c3）'
+        required: true
+        default: 'tbeam'
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # 👈 这里删掉了 continue-on-error，失败就变红、失败
+
+    steps:
+      - name: Checkout mtcn
+        uses: actions/checkout@v6
+        with:
+          path: mtcn
+
+      - name: Checkout meshtastic/firmware
+        uses: actions/checkout@v6
+        with:
+          repository: meshtastic/firmware
+          path: firmware
+          submodules: recursive
+
+      - name: 替换 variants
+        run: |
+          rm -rf firmware/variants
+          cp -r mtcn/variants firmware/
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: 安装 PlatformIO & 工具
+        run: |
+          python -m pip install -U pip
+          python -m pip install -U platformio
+          cd firmware
+          pio pkg install -g -t tool-mklittlefs
+          pio pkg install -g -t tool-esptoolpy
+
+      - name: 编译 ${{ inputs.board }}
+        run: |
+          cd firmware
+          pio run -e ${{ inputs.board }}
+
+      - name: 上传固件
+        uses: actions/upload-artifact@v6
+        with:
+          name: firmware-${{ inputs.board }}
+          path: |
+            firmware/.pio/build/${{ inputs.board }}/*.bin
+            firmware/.pio/build/${{ inputs.board }}/*.uf2
+            firmware/.pio/build/${{ inputs.board }}/*.hex
