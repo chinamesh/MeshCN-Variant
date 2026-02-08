@@ -10,7 +10,7 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout 你的 mtcn 仓库（variants）
+      - name: Checkout 你的 mtcn 仓库
         uses: actions/checkout@v6
         with:
           path: mtcn
@@ -22,7 +22,6 @@ jobs:
           path: firmware
           submodules: recursive
 
-      # 👇 只做这一件事：替换 variants，别的都不动
       - name: 替换 variants
         run: |
           rm -rf firmware/variants
@@ -33,15 +32,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: 安装 PlatformIO
+      - name: 安装 PlatformIO & 工具
         run: |
           python -m pip install -U pip
           python -m pip install -U platformio
 
-      - name: 生成所有板子矩阵（官方脚本，会包含你的新变种）
+      - name: 生成构建矩阵
         id: gen-matrix
         run: |
-          cd firmware
+          cd firmware  # 必须进这里
           TARGETS=$(./bin/generate_ci_matrix.py all)
           echo "all=$TARGETS" >> $GITHUB_OUTPUT
 
@@ -74,16 +73,17 @@ jobs:
           rm -rf firmware/variants
           cp -r mtcn/variants firmware/
 
-      - name: 安装 PlatformIO & 工具（修复 mklittlefs）
+      - name: 安装 PlatformIO & 工具（关键修复）
         run: |
           python -m pip install -U pip
           python -m pip install -U platformio
+          cd firmware        # 必须进项目目录
           pio pkg install -g -t tool-mklittlefs
-          pio pkg install -t tool-esptoolpy
+          pio pkg install -g -t tool-esptoolpy
 
       - name: 编译 ${{ matrix.build.board }}
         run: |
-          cd firmware
+          cd firmware        # 必须进项目目录
           pio run -e ${{ matrix.build.board }}
 
       - name: 上传固件
