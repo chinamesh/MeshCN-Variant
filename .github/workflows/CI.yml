@@ -1,79 +1,103 @@
-name: CI
+name: Meshtastic 固件自动构建
+
 on:
+  # 定时自动构建（每2小时）同步官方分支
   schedule:
     - cron: '0 */2 * * *'
+  # 手动触发构建
   workflow_dispatch:
+  # 推送到 master/main 分支时自动构建
   push:
     branches: [ master, main ]
 
 jobs:
+  # ================================
+  # Job 1: 生成编译矩阵（所有设备列表）
+  # ================================
   setup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout 你的 mtcn 仓库
+      # 拉取本仓库（你的 variants 配置）
+      - name: Checkout 本地自定义配置
         uses: actions/checkout@v6
         with:
           path: mtcn
 
-      - name: Checkout meshtastic/firmware 官方源码
+      # 拉取官方 Meshtastic 固件源码
+      - name: Checkout 官方固件源码
         uses: actions/checkout@v6
         with:
           repository: meshtastic/firmware
           path: firmware
           submodules: recursive
 
-      - name: 替换 variants
+      # 替换 variants 为你的自定义硬件配置
+      - name: 应用自定义硬件变种(variants)
         run: |
           rm -rf firmware/variants
           cp -r mtcn/variants firmware/
 
-      - name: Setup Python
+      # 配置 Python 环境
+      - name: 配置 Python 环境
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
+      # 安装 PlatformIO 核心工具
       - name: 安装 PlatformIO
         run: |
           python -m pip install -U pip
           python -m pip install -U platformio
 
-      - name: 生成构建矩阵
+      # 调用官方脚本，生成所有设备的编译矩阵
+      - name: 生成全设备编译矩阵
         id: gen-matrix
         run: |
           cd firmware
           TARGETS=$(./bin/generate_ci_matrix.py all)
           echo "all=$TARGETS" >> $GITHUB_OUTPUT
 
+    # 导出矩阵数据给 build 任务使用
     outputs:
       all: ${{ steps.gen-matrix.outputs.all }}
 
+  # ================================
+  # Job 2: 矩阵并行编译
+  # ================================
   build:
     needs: setup
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false         # 一个失败不中断其他编译
+      # 单个设备编译失败，不中断其他设备
+      fail-fast: false
       matrix:
         build: ${{ fromJson(needs.setup.outputs.all) }}
-    continue-on-error: true     # 👈 就是这一行：允许个别失败，整体仍绿色
+    # 允许个别任务失败，整体 CI 仍显示绿色通过
+    continue-on-error: true
+
     steps:
-      - name: Checkout 你的 mtcn
+      # 拉取自定义配置
+      - name: Checkout 本地自定义配置
         uses: actions/checkout@v6
         with:
           path: mtcn
 
-      - name: Checkout meshtastic/firmware
+      # 拉取官方源码
+      - name: Checkout 官方固件源码
         uses: actions/checkout@v6
         with:
           repository: meshtastic/firmware
           path: firmware
           submodules: recursive
 
-      - name: 替换 variants
+      # 替换自定义硬件配置
+      - name: 应用自定义硬件变种(variants)
         run: |
           rm -rf firmware/variants
           cp -r mtcn/variants firmware/
 
-      - name: 安装 PlatformIO & 工具
+      # 安装编译依赖工具（解决 mklittlefs 缺失问题）
+      - name: 安装编译工具链
         run: |
           python -m pip install -U pip
           python -m pip install -U platformio
@@ -81,12 +105,14 @@ jobs:
           pio pkg install -g -t tool-mklittlefs
           pio pkg install -g -t tool-esptoolpy
 
-      - name: 编译 ${{ matrix.build.board }}
+      # 编译当前设备
+      - name: 编译设备: ${{ matrix.build.board }}
         run: |
           cd firmware
           pio run -e ${{ matrix.build.board }}
 
-      - name: 上传固件
+      # 上传编译产出固件文件
+      - name: 上传固件产物
         uses: actions/upload-artifact@v6
         with:
           name: firmware-${{ matrix.build.board }}
