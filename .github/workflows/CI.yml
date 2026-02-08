@@ -1,46 +1,53 @@
 name: CI
- on:
-   schedule:
-     - cron: '0 */2 * * *'  # 每2小时
-   workflow_dispatch:
-   push:
-     branches: [ master, main ]
- jobs:
-   build:
-     runs-on: ubuntu-latest
-     steps:
-       - name: Checkout mtcn
-         uses: actions/checkout@v6
-         with:
-           path: mtcn
-       - name: Checkout meshtastic/firmware
-         uses: actions/checkout@v6
-         with:
-           repository: meshtastic/firmware
-           path: firmware
-           submodules: recursive
-       - name: 替换 variants
-         run: |
-           rm -rf firmware/variants
-           cp -r mtcn/variants firmware/
-       - name: Setup Python
-         uses: actions/setup-python@v6
-         with:
-           python-version: "3.11"
-       - name: 安装 PlatformIO
-         run: |
-           python -m pip install -U pip
-           python -m pip install -U platformio
-       # 👇 重点：只保留 pio run，啥也不加！！
-       - name: 编译全部固件
-         run: |
-           cd firmware
-           pio run
-       - name: 上传所有固件
-         uses: actions/upload-artifact@v6
-         with:
-           name: all-firmwares
-           path: |
-             firmware/.pio/build/**/*.bin
-             firmware/.pio/build/**/*.uf2
-             firmware/.pio/build/**/*.hex
+on:
+  schedule:
+    - cron: '0 */2 * * *'  # 每2小时
+  workflow_dispatch:
+  push:
+    branches: [ master, main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout mtcn
+        uses: actions/checkout@v6
+        with:
+          path: mtcn
+
+      - name: Checkout meshtastic/firmware
+        uses: actions/checkout@v6
+        with:
+          repository: meshtastic/firmware
+          path: firmware
+          submodules: recursive
+
+      - name: 替换 variants
+        run: |
+          rm -rf firmware/variants
+          cp -r mtcn/variants firmware/
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: 安装 PlatformIO
+        run: |
+          python -m pip install -U pip
+          python -m pip install -U platformio
+
+      # 👇 重点：只保留 pio run，啥也不加！！
+      - name: 编译全部固件
+        run: |
+          cd firmware
+          pio run
+
+      - name: 上传所有固件
+        uses: actions/upload-artifact@v6
+        with:
+          name: all-firmwares
+          path: |
+            firmware/.pio/build/**/*.bin
+            firmware/.pio/build/**/*.uf2
+            firmware/.pio/build/**/*.hex
