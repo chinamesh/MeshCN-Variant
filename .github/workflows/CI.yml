@@ -32,12 +32,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: 安装 PlatformIO
+      - name: 安装 PlatformIO + 编译工具
         run: |
           python -m pip install -U pip
           python -m pip install -U platformio
+          # 👇 就是这里修好你的报错
+          pio pkg install -g -t tool-mklittlefs
+          pio pkg install -g -t tool-esptoolpy
 
-      # 👇 重点：只保留 pio run，啥也不加！！
       - name: 编译全部固件
         run: |
           cd firmware
