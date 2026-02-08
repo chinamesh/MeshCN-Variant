@@ -1,16 +1,58 @@
 name: CI
 on:
   schedule:
-    - cron: '0 */2 * * *'  # 每2小时
+    - cron: '0 */2 * * *'
   workflow_dispatch:
   push:
     branches: [ master, main ]
 
 jobs:
-  build:
+  # ======================
+  # 官方第一步：生成编译矩阵（所有板子列表）
+  # ======================
+  setup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout mtcn
+      - name: Checkout meshtastic firmware
+        uses: actions/checkout@v6
+        with:
+          repository: meshtastic/firmware
+          path: firmware
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: 安装 PlatformIO
+        run: |
+          python -m pip install -U pip
+          python -m pip install -U platformio
+
+      - name: 生成所有编译目标矩阵（官方脚本）
+        id: gen-matrix
+        run: |
+          cd firmware
+          TARGETS=$(./bin/generate_ci_matrix.py all)
+          echo "all=$TARGETS" >> $GITHUB_OUTPUT
+    outputs:
+      all: ${{ steps.gen-matrix.outputs.all }}
+
+  # ======================
+  # 官方第二步：矩阵编译（每个板子单独编译）
+  # ======================
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    # 官方核心：用 GitHub 矩阵循环编译每一块板子
+    strategy:
+      fail-fast: false
+      matrix:
+        build: ${{ fromJson(needs.setup.outputs.all) }}
+
+    steps:
+      - name: Checkout mtcn（你的变种文件）
         uses: actions/checkout@v6
         with:
           path: mtcn
@@ -22,7 +64,7 @@ jobs:
           path: firmware
           submodules: recursive
 
-      - name: 替换 variants
+      - name: 替换 variants（你原来的逻辑）
         run: |
           rm -rf firmware/variants
           cp -r mtcn/variants firmware/
@@ -32,24 +74,23 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: 安装 PlatformIO + 编译工具
+      - name: 安装 PlatformIO + 解决 mklittlefs 报错
         run: |
           python -m pip install -U pip
           python -m pip install -U platformio
-          # 👇 就是这里修好你的报错
           pio pkg install -g -t tool-mklittlefs
           pio pkg install -g -t tool-esptoolpy
 
-      - name: 编译全部固件
+      - name: 编译当前板子（官方标准命令）
         run: |
           cd firmware
-          pio run --all --parallel
+          pio run -e ${{ matrix.build.board }}
 
-      - name: 上传所有固件
+      - name: 上传该板子固件
         uses: actions/upload-artifact@v6
         with:
-          name: all-firmwares
+          name: firmware-${{ matrix.build.board }}
           path: |
-            firmware/.pio/build/**/*.bin
-            firmware/.pio/build/**/*.uf2
-            firmware/.pio/build/**/*.hex
+            firmware/.pio/build/${{ matrix.build.board }}/*.bin
+            firmware/.pio/build/${{ matrix.build.board }}/*.uf2
+            firmware/.pio/build/${{ matrix.build.board }}/*.hex
