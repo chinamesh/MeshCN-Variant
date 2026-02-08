@@ -1,8 +1,8 @@
 name: CI
 on:
   schedule:
-    - cron: '0 */2 * * *'  # 每 2 小时
-  workflow_dispatch:      # 可手动触发
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
   push:
     branches: [ master, main ]
 
@@ -22,7 +22,7 @@ jobs:
           path: firmware
           submodules: recursive
 
-      - name: 替换 variants
+      - name: 替换你的 variants
         run: |
           rm -rf firmware/variants
           cp -r mtcn/variants firmware/
@@ -37,6 +37,7 @@ jobs:
           python -m pip install -U pip
           python -m pip install -U platformio
 
+      # 👇 只改这里：不指定任何环境，全编译
       - name: 编译全部固件
         run: |
           cd firmware
