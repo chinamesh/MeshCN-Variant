@@ -1,0 +1,161 @@
+name: CI-Build-From-Official-Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      # 手动指定版本号，留空则自动使用官方最新 Release
+      meshtastic_tag:
+        description: 'Meshtastic 版本号（留空=自动最新正式版）'
+        required: false
+        default: ''
+      # 手动指定 patches 下的子文件夹，留空则使用根目录补丁
+      patch_subdir:
+        description: 'patches 子文件夹（留空=使用根目录补丁）'
+        required: false
+        default: ''
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      all: ${{ steps.gen-matrix.outputs.all }}
+      official_tag: ${{ steps.get-latest-release.outputs.tag }}
+      # 把补丁目录传给 build 任务
+      patch_subdir: ${{ github.event.inputs.patch_subdir }}
+    steps:
+      - name: Checkout 自定义配置
+        uses: actions/checkout@v6
+        with:
+          path: mtcn
+
+      # 获取官方最新 Release 版本号
+      - name: 获取官方最新版本
+        id: get-latest-release
+        run: |
+          if [ -n "${{ github.event.inputs.meshtastic_tag }}" ]; then
+            TAG="${{ github.event.inputs.meshtastic_tag }}"
+          else
+            TAG=$(curl -s https://api.github.com/repos/meshtastic/firmware/releases/latest | jq -r .tag_name)
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # 拉取指定版本的官方源码
+      - name: 拉取官方固件源码
+        uses: actions/checkout@v6
+        with:
+          repository: meshtastic/firmware
+          path: firmware
+          submodules: recursive
+          ref: ${{ steps.get-latest-release.outputs.tag }}
+
+      # 根据输入选择补丁文件夹
+      - name: 应用自定义配置与补丁
+        run: |
+          rm -rf firmware/variants
+          cp -r mtcn/variants firmware/
+
+          if [ -n "${{ github.event.inputs.patch_subdir }}" ]; then
+            PATCH_DIR="mtcn/patches/${{ github.event.inputs.patch_subdir }}"
+          else
+            PATCH_DIR="mtcn/patches"
+          fi
+
+          if [ -d "$PATCH_DIR" ]; then
+            cd firmware
+            for patch in ../"$PATCH_DIR"/*.patch; do
+              [ -f "$patch" ] && echo "Applying $patch" && patch -p1 < "$patch"
+            done
+          fi
+
+      - name: 配置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: 'pip'  # 开启 pip 缓存
+
+      - name: 安装 PlatformIO
+        run: python -m pip install -U pip platformio
+
+      - name: 生成编译矩阵
+        id: gen-matrix
+        run: |
+          cd firmware
+          TARGETS=$(./bin/generate_ci_matrix.py all)
+          echo "all=$TARGETS" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build: ${{ fromJson(needs.setup.outputs.all) }}
+    continue-on-error: true
+
+    steps:
+      - name: Checkout 自定义配置
+        uses: actions/checkout@v6
+        with:
+          path: mtcn
+
+      # 与 setup 保持同一个官方版本
+      - name: 拉取官方固件源码
+        uses: actions/checkout@v6
+        with:
+          repository: meshtastic/firmware
+          path: firmware
+          submodules: recursive
+          ref: ${{ needs.setup.outputs.official_tag }}
+
+      # 与 setup 使用同一个补丁目录
+      - name: 应用自定义配置与补丁
+        run: |
+          rm -rf firmware/variants
+          cp -r mtcn/variants firmware/
+
+          if [ -n "${{ needs.setup.outputs.patch_subdir }}" ]; then
+            PATCH_DIR="mtcn/patches/${{ needs.setup.outputs.patch_subdir }}"
+          else
+            PATCH_DIR="mtcn/patches"
+          fi
+
+          if [ -d "$PATCH_DIR" ]; then
+            cd firmware
+            for patch in ../"$PATCH_DIR"/*.patch; do
+              [ -f "$patch" ] && echo "Applying $patch" && patch -p1 < "$patch"
+            done
+          fi
+
+      - name: 配置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: 'pip'  # 开启 pip 缓存
+
+      # 缓存 PlatformIO 工具链与库
+      - name: 缓存 PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: 安装编译工具链
+        run: |
+          python -m pip install -U pip platformio
+          cd firmware
+          pio pkg install -g -t tool-mklittlefs
+          pio pkg install -g -t tool-esptoolpy
+
+      - name: 编译 ${{ matrix.build.board }}
+        run: |
+          cd firmware
+          pio run -e ${{ matrix.build.board }}
+
+      - name: 上传固件产物
+        uses: actions/upload-artifact@v6
+        with:
+          name: firmware-${{ matrix.build.board }}
+          path: firmware/.pio/build/${{ matrix.build.board }}/*.{bin,uf2,hex}
+          if-no-files-found: warn
