@@ -1,0 +1,93 @@
+name: Build Single (from commit)
+
+on:
+  workflow_dispatch:
+    inputs:
+      board:
+        description: '输入要编译的 env 名称（如 tbeam、esp32c3）'
+        required: true
+        default: 'tbeam'
+        type: string
+      # 手动指定 patches 子文件夹，留空=使用根目录补丁
+      patch_subdir:
+        description: 'patches 子文件夹（留空=使用根目录补丁）'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 本地自定义配置
+        uses: actions/checkout@v6
+        with:
+          path: mtcn
+
+      # 固定使用指定的官方 commit
+      - name: 设置固定 commit
+        run: echo "FIXED_COMMIT=a092f6bb22f6fae223acf50e3306a9063f790fbd" >> "$GITHUB_ENV"
+
+      # 拉取固定 commit 的官方源码
+      - name: Checkout 官方固件源码
+        uses: actions/checkout@v6
+        with:
+          repository: meshtastic/firmware
+          path: firmware
+          submodules: recursive
+          ref: ${{ env.FIXED_COMMIT }}
+
+      # 根据输入选择补丁文件夹
+      - name: 应用自定义硬件变种与补丁
+        run: |
+          rm -rf firmware/variants
+          cp -r mtcn/variants firmware/
+
+          if [ -n "${{ github.event.inputs.patch_subdir }}" ]; then
+            PATCH_DIR="mtcn/patches/${{ github.event.inputs.patch_subdir }}"
+          else
+            PATCH_DIR="mtcn/patches"
+          fi
+
+          if [ -d "$PATCH_DIR" ]; then
+            cd firmware
+            for patch in ../"$PATCH_DIR"/*.patch; do
+              [ -f "$patch" ] && echo "Applying $patch" && patch -p1 < "$patch"
+            done
+          fi
+
+      - name: 配置 Python 3.11 环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: 'pip'  # 开启 pip 缓存
+
+      # 缓存 PlatformIO 工具链
+      - name: 缓存 PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: 安装 PlatformIO 及依赖工具
+        run: |
+          python -m pip install -U pip
+          python -m pip install -U platformio
+          cd firmware
+          pio pkg install -g -t tool-mklittlefs
+          pio pkg install -g -t tool-esptoolpy
+
+      - name: 编译目标设备 ${{ inputs.board }}
+        run: |
+          cd firmware
+          pio run -e ${{ inputs.board }}
+
+      - name: 上传固件产物
+        uses: actions/upload-artifact@v6
+        with:
+          name: firmware-${{ inputs.board }}
+          path: |
+            firmware/.pio/build/${{ inputs.board }}/*.bin
+            firmware/.pio/build/${{ inputs.board }}/*.uf2
+            firmware/.pio/build/${{ inputs.board }}/*.hex
