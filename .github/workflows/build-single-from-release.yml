@@ -1,4 +1,4 @@
-name: Build Single (from release)
+name: Build Single (from commit)
 
 on:
   workflow_dispatch:
@@ -8,11 +8,6 @@ on:
         required: true
         default: 'tbeam'
         type: string
-      # 手动指定版本号，留空=自动使用官方最新 Release
-      meshtastic_tag:
-        description: 'Meshtastic 版本号（留空=自动最新正式版）'
-        required: false
-        default: ''
       # 手动指定 patches 子文件夹，留空=使用根目录补丁
       patch_subdir:
         description: 'patches 子文件夹（留空=使用根目录补丁）'
@@ -28,25 +23,18 @@ jobs:
         with:
           path: mtcn
 
-      # 获取官方最新 Release 版本号
-      - name: 获取官方最新版本
-        id: get-latest-release
-        run: |
-          if [ -n "${{ github.event.inputs.meshtastic_tag }}" ]; then
-            TAG="${{ github.event.inputs.meshtastic_tag }}"
-          else
-            TAG=$(curl -s https://api.github.com/repos/meshtastic/firmware/releases/latest | jq -r .tag_name)
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      # 固定使用指定的官方 commit
+      - name: 设置固定 commit
+        run: echo "FIXED_COMMIT=这里填入你要的commit哈希" >> "$GITHUB_ENV"
 
-      # 拉取指定版本的官方源码
+      # 拉取固定 commit 的官方源码
       - name: Checkout 官方固件源码
         uses: actions/checkout@v6
         with:
           repository: meshtastic/firmware
           path: firmware
           submodules: recursive
-          ref: ${{ steps.get-latest-release.outputs.tag }}
+          ref: ${{ env.FIXED_COMMIT }}
 
       # 根据输入选择补丁文件夹
       - name: 应用自定义硬件变种与补丁
