@@ -20,7 +20,7 @@ jobs:
 
       # 固定写死要使用的官方 commit
       - name: 设置固定官方 commit
-        run: echo "FIXED_COMMIT=这里改成你要的commit哈希" >> "$GITHUB_ENV"
+        run: echo "FIXED_COMMIT=a092f6bb22f6fae223acf50e3306a9063f790fbd" >> "$GITHUB_ENV"
 
       # 拉取指定 commit 的官方源码
       - name: 拉取官方固件源码
