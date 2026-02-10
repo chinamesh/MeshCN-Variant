@@ -1,12 +1,12 @@
-name: CI-Build-From-Official-Release
+name: CI-Build-From-commit
 
 on:
   workflow_dispatch:
     inputs:
-      # 手动指定版本号，留空则自动使用官方最新 Release
-      meshtastic_tag:
-        description: 'Meshtastic 版本号（留空=自动最新正式版）'
-        required: false
+      # 手动指定官方 commit 哈希
+      meshtastic_commit:
+        description: 'Meshtastic 提交哈希(commit SHA)'
+        required: true
         default: ''
       # 手动指定 patches 下的子文件夹，留空则使用根目录补丁
       patch_subdir:
@@ -19,7 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       all: ${{ steps.gen-matrix.outputs.all }}
-      official_tag: ${{ steps.get-latest-release.outputs.tag }}
+      # 传递官方 commit 给 build 任务
+      official_commit: ${{ github.event.inputs.meshtastic_commit }}
       # 把补丁目录传给 build 任务
       patch_subdir: ${{ github.event.inputs.patch_subdir }}
     steps:
@@ -28,25 +29,14 @@ jobs:
         with:
           path: mtcn
 
-      # 获取官方最新 Release 版本号
-      - name: 获取官方最新版本
-        id: get-latest-release
-        run: |
-          if [ -n "${{ github.event.inputs.meshtastic_tag }}" ]; then
-            TAG="${{ github.event.inputs.meshtastic_tag }}"
-          else
-            TAG=$(curl -s https://api.github.com/repos/meshtastic/firmware/releases/latest | jq -r .tag_name)
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-      # 拉取指定版本的官方源码
+      # 拉取指定 commit 的官方源码
       - name: 拉取官方固件源码
         uses: actions/checkout@v6
         with:
           repository: meshtastic/firmware
           path: firmware
           submodules: recursive
-          ref: ${{ steps.get-latest-release.outputs.tag }}
+          ref: ${{ github.event.inputs.meshtastic_commit }}
 
       # 根据输入选择补丁文件夹
       - name: 应用自定义配置与补丁
@@ -98,14 +88,14 @@ jobs:
         with:
           path: mtcn
 
-      # 与 setup 保持同一个官方版本
+      # 与 setup 保持同一个官方 commit
       - name: 拉取官方固件源码
         uses: actions/checkout@v6
         with:
           repository: meshtastic/firmware
           path: firmware
           submodules: recursive
-          ref: ${{ needs.setup.outputs.official_tag }}
+          ref: ${{ needs.setup.outputs.official_commit }}
 
       # 与 setup 使用同一个补丁目录
       - name: 应用自定义配置与补丁
