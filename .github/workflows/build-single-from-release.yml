@@ -25,7 +25,7 @@ jobs:
 
       # 固定使用指定的官方 commit
       - name: 设置固定 commit
-        run: echo "FIXED_COMMIT=这里填入你要的commit哈希" >> "$GITHUB_ENV"
+        run: echo "FIXED_COMMIT=a092f6bb22f6fae223acf50e3306a9063f790fbd" >> "$GITHUB_ENV"
 
       # 拉取固定 commit 的官方源码
       - name: Checkout 官方固件源码
